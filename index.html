@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NCAA D-I Men's Basketball Player Stats</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f7f7f5;--ink:#1d1d1f;--muted:#74747a;--line:#e7e6e2;--accent:#2b59c3;--hi:#f1eee4;--card:#fdfdfc}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14.5px/1.45 Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+header,main{max-width:1200px;margin:auto;padding:0 20px}
+header{padding-top:40px}
+h1{font:600 clamp(26px,4vw,36px)/1.1 Inter,system-ui,sans-serif;letter-spacing:-.025em;margin:0 0 8px}
+#meta{color:var(--muted);margin:0 0 20px}
+.bar{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+input,select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+input{flex:1 1 240px}
+input:focus-visible,select:focus-visible,th:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.wrap{overflow:auto;max-height:75vh;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 2px rgba(20,20,20,.04)}
+table{border-collapse:collapse;width:100%;white-space:nowrap}
+th,td{padding:10px 16px;text-align:left;border-bottom:1px solid var(--line)}
+th{position:sticky;top:0;background:var(--card);cursor:pointer;font-weight:500;font-size:13px;color:var(--muted);user-select:none}
+th[aria-sort=ascending],th[aria-sort=descending]{color:var(--ink)}
+th[aria-sort=ascending]::after{content:" \25B2";font-size:9px;color:var(--accent)}
+th[aria-sort=descending]::after{content:" \25BC";font-size:9px;color:var(--accent)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+td.rating{background:var(--hi);font-weight:500}
+tbody tr:hover td{background:#f3f3f0}
+tbody tr:hover td.rating{background:#ebe7d8}
+tbody tr:last-child td{border-bottom:0}
+#msg{padding:28px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>NCAA D-I Men's Basketball Player Stats</h1>
+  <p id="meta">Loading…</p>
+  <div class="bar">
+    <input id="q" type="search" placeholder="Search players, teams, anything" aria-label="Search">
+    <select id="conf" aria-label="Conference"><option value="">All conferences</option></select>
+  </div>
+</header>
+<main>
+  <div class="wrap"><table><thead></thead><tbody></tbody></table><div id="msg" hidden></div></div>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const LIMIT = 1000;
+let rows = [], cols = [], sortKey = null, asc = true;
+const $ = s => document.querySelector(s);
+const isNum = v => typeof v === 'number';
+
+function msg(t){ const m=$('#msg'); m.textContent=t; m.hidden=!t; }
+
+fetch('stats.xlsx').then(r => {
+  if (!r.ok) throw new Error('stats.xlsx was not found. Upload it to the same folder as index.html.');
+  return r.arrayBuffer();
+}).then(buf => {
+  const wb = XLSX.read(buf, {type:'array'});
+  wb.SheetNames.forEach(name => {
+    XLSX.utils.sheet_to_json(wb.Sheets[name], {defval:''}).forEach(d => {
+      if (!('Conference' in d)) d = Object.assign({Conference:name}, d);
+      rows.push(d);
+    });
+  });
+  const seen = new Set();
+  rows.forEach(r => Object.keys(r).forEach(k => seen.add(k)));
+  cols = [...seen];
+  [...new Set(rows.map(r => r.Conference))].sort().forEach(c => {
+    const o = document.createElement('option'); o.value = o.textContent = c; $('#conf').append(o);
+  });
+  const th = $('thead'), tr = document.createElement('tr');
+  cols.forEach(c => {
+    const h = document.createElement('th');
+    h.textContent = c; h.tabIndex = 0;
+    if (rows.some(r => isNum(r[c]))) h.className = 'num';
+    const go = () => { asc = sortKey === c ? !asc : true; sortKey = c; render(); };
+    h.onclick = go; h.onkeydown = e => { if (e.key==='Enter'||e.key===' ') { e.preventDefault(); go(); } };
+    tr.append(h);
+  });
+  th.append(tr);
+  $('#q').oninput = render; $('#conf').onchange = render;
+  render();
+}).catch(e => { $('#meta').textContent = ''; msg('Could not load the data. ' + e.message); });
+
+function render(){
+  const q = $('#q').value.trim().toLowerCase(), conf = $('#conf').value;
+  let out = rows.filter(r => (!conf || r.Conference === conf) &&
+    (!q || cols.some(c => String(r[c]).toLowerCase().includes(q))));
+  if (sortKey) out.sort((a,b) => {
+    const x=a[sortKey], y=b[sortKey];
+    const c = isNum(x) && isNum(y) ? x-y : String(x).localeCompare(String(y), undefined, {numeric:true});
+    return asc ? c : -c;
+  });
+  document.querySelectorAll('th').forEach((h,i) =>
+    h.setAttribute('aria-sort', cols[i]===sortKey ? (asc?'ascending':'descending') : 'none'));
+  const body = $('tbody'); body.textContent = '';
+  const frag = document.createDocumentFragment();
+  out.slice(0, LIMIT).forEach(r => {
+    const tr = document.createElement('tr');
+    cols.forEach(c => {
+      const td = document.createElement('td');
+      td.textContent = r[c] ?? '';
+      if (isNum(r[c])) td.className = 'num';
+      if (c.toLowerCase() === 'rating') td.classList.add('rating');
+      tr.append(td);
+    });
+    frag.append(tr);
+  });
+  body.append(frag);
+  $('#meta').textContent = out.length > LIMIT
+    ? `Showing the first ${LIMIT} of ${out.length} players. Narrow with search or conference.`
+    : `${out.length} players`;
+  msg(out.length ? '' : 'No players match. Clear the search or pick another conference.');
+}
+</script>
+</body>
+</html>
